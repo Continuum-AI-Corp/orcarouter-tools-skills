@@ -1,35 +1,32 @@
-# orcarouter-tools-skills
+# OrcaRouter Tools skill
 
-The OrcaRouter Tools agent skill, published to npm as `@orcarouter/tools-skill`.
+An agent skill for discovering, inspecting and running pay-per-call tools
+(web search, scraping, data enrichment, and more) through OrcaRouter. One API
+key, one balance; every run is quoted before it executes and billed to your
+workspace wallet.
 
-The package ships one file, `SKILL.md`. An agent installs the skill by fetching it:
+## Install
 
-```
-set up https://unpkg.com/@orcarouter/tools-skill@<version>/SKILL.md
-```
-
-To make the OrcaRouter console show this address instead of the built-in
-`<api origin>/.well-known/orca/tools/SKILL.md`, set `TOOLS_SKILL_URL` on the
-server to the URL above, pinned to a published version.
-
-## Source
-
-`SKILL.md` is copied from the OrcaRouter O2 repo,
-`controller/assets/skills/orcarouter-tools/SKILL.md` (the copy the server embeds).
-Edit it there first, then sync it here so the two stay byte-identical:
+Tell your agent:
 
 ```
-scripts/sync-from-o2.sh <path-to-O2-checkout>
+set up https://cdn.jsdelivr.net/npm/@orcarouter/tools-skill/SKILL.md
 ```
 
-## Release
+Or install it as a Claude Code skill:
 
 ```
-scripts/sync-from-o2.sh <path-to-O2-checkout>   # commit if SKILL.md changed
-npm version patch        # or minor / major
-npm publish              # scoped package; publishConfig.access is public
-git push --follow-tags
+mkdir -p ~/.claude/skills/orcarouter-tools
+curl -fsSL https://cdn.jsdelivr.net/npm/@orcarouter/tools-skill/SKILL.md \
+  -o ~/.claude/skills/orcarouter-tools/SKILL.md
 ```
 
-Check that `https://unpkg.com/@orcarouter/tools-skill@<version>/SKILL.md` returns the
-file, then update `TOOLS_SKILL_URL`.
+## Setup
+
+Create an API key in the OrcaRouter console and export it:
+
+```
+export ORCA_KEY=<your OrcaRouter API key>
+```
+
+The skill reads the key from `ORCA_KEY`. Never paste the key into a prompt.
