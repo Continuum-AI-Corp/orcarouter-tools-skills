@@ -2,12 +2,13 @@
   "name": "@orcarouter/tools-skill",
   "version": "0.1.0",
   "description": "OrcaRouter Tools agent skill (SKILL.md): discover, inspect and run pay-per-call tools through the OrcaRouter /v1/tools API.",
-  "keywords": ["orcarouter", "agent-skill", "skill", "tools", "claude"],
-  "homepage": "https://github.com/Continuum-AI-Corp/orcarouter-tools-skills#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Continuum-AI-Corp/orcarouter-tools-skills.git"
-  },
+  "keywords": [
+    "orcarouter",
+    "agent-skill",
+    "skill",
+    "tools",
+    "claude"
+  ],
   "files": [
     "SKILL.md"
   ],

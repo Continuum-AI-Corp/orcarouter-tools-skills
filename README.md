@@ -16,11 +16,16 @@ server to the URL above, pinned to a published version.
 
 `SKILL.md` is copied from the OrcaRouter O2 repo,
 `controller/assets/skills/orcarouter-tools/SKILL.md` (the copy the server embeds).
-Edit it there first, then copy it here so the two stay the same.
+Edit it there first, then sync it here so the two stay byte-identical:
+
+```
+scripts/sync-from-o2.sh <path-to-O2-checkout>
+```
 
 ## Release
 
 ```
+scripts/sync-from-o2.sh <path-to-O2-checkout>   # commit if SKILL.md changed
 npm version patch        # or minor / major
 npm publish              # scoped package; publishConfig.access is public
 git push --follow-tags
