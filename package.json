@@ -1,6 +1,6 @@
 {
   "name": "@orcarouter/tools-skill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OrcaRouter Tools agent skill (SKILL.md): discover, inspect and run pay-per-call tools through the OrcaRouter /v1/tools API.",
   "keywords": [
     "orcarouter",
