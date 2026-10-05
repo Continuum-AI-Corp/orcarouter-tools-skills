@@ -1,0 +1,30 @@
+{
+  "name": "@orcarouter/cli",
+  "version": "0.1.0",
+  "description": "orca-tools: discover, inspect and run pay-per-call tools through the OrcaRouter /v1/tools API.",
+  "keywords": [
+    "orcarouter",
+    "cli",
+    "tools",
+    "agent"
+  ],
+  "type": "module",
+  "bin": {
+    "orca-tools": "bin/orca-tools.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "public"
+  }
+}
