@@ -205,9 +205,11 @@ curl -sS "$ORCA_BASE/v1/tools/runs/run_01J9…" \
 
 Returns the stored run: `run_id, connector_id, run_ref, status, quoted_usd,
 billed_usd, sell_unit_usd, units, latency_ms, error_code, error, sanitized,
-refund_pending, input, output, payload_state, created_at, finished_at`. Only **your own** runs resolve — a
-run made by another agent, even one in the same workspace, is
-`404 run_not_found`, the same answer as a run id that never existed. Use it
+refund_pending, input, output, payload_state, created_at, finished_at`. Runs resolve **per agent**: a key
+bound to an agent sees that agent's runs, and every plain workspace key sees
+the runs of the workspace's shared `cli` agent — that is, all runs made with
+plain keys in the workspace, whoever's key it was. A run made by any other
+agent is `404 run_not_found`, the same answer as a run id that never existed. Use it
 when a run call timed out client-side and you need to know whether it
 completed and what it cost.
 
