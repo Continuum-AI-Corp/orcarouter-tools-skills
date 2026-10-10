@@ -11,11 +11,14 @@ This repo publishes two packages:
 
 ## @orcarouter/tools-skill
 
-`SKILL.md` is copied from the OrcaRouter O2 repo,
-`controller/assets/skills/orcarouter-tools/SKILL.md`. Edit it there first.
+`SKILL.md` is maintained here; this repo is its only source. OrcaRouter
+servers no longer embed a copy: the console's "set up" line and the legacy
+`/.well-known/orca/tools/SKILL.md` path both point at this package on jsDelivr.
+Nothing in the server repo checks the error table against the wire codes any
+more, so when `/v1/tools` adds or changes an error code or its status, update
+the table here in the same change.
 
 ```
-scripts/sync-from-o2.sh <path-to-O2-checkout>   # commit if SKILL.md changed
 npm version patch                               # or minor / major
 npm publish
 git push --follow-tags
