@@ -1,6 +1,6 @@
-# OrcaRouter Tools skill
+# Agent-tools
 
-An agent skill for discovering, inspecting and running pay-per-call tools
+An OrcaRouter agent skill for discovering, inspecting and running pay-per-call tools
 (web search, scraping, data enrichment, and more) through OrcaRouter. One API
 key, one balance; every run is quoted before it executes and billed to your
 workspace wallet.
@@ -30,3 +30,5 @@ export ORCA_KEY=<your OrcaRouter API key>
 ```
 
 The skill reads the key from `ORCA_KEY`. Never paste the key into a prompt.
+
+Full documentation: [docs.orcarouter.ai/agent-infra/tools](https://docs.orcarouter.ai/agent-infra/tools/overview).
