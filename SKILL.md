@@ -327,11 +327,11 @@ tell your operator. Retrying cannot fix them.
 | 404 | `run_not_found` | No run with that id in your workspace | Check the id. |
 | 429 | `rate_limited` | Too many runs from **your key** per minute | Back off for `Retry-After` seconds, then continue. Pacing your own loop fixes this. |
 | 429 | `upstream_busy` | The tool's **provider** is at its concurrency or rate ceiling — platform-wide, not yours. Nothing was sent and nothing was billed; the body carries `outcome: "none"`, `retry_safe: true` and `retry_after` in seconds. | Pacing your own loop will **not** help: the saturation is shared. Either wait `Retry-After` seconds, or `discover` an alternative tool for the same job and use it now. If you have a batch to get through, prefer the alternative — this ceiling is usually a provider's account quota and will not clear quickly. |
-| 502 | `provider_failed` | The provider call failed: it answered a non-2xx status, the connection failed, or it answered 2xx with a body too large to read (a credential that is not configured is `503 tool_unavailable`, and one that cannot be resolved is `500 tool_unavailable` — neither is this code). The hold was released — **nothing was billed**. The body carries `outcome` and `retry_safe` (see *Retrying a failed run*): `"none"` when the failure happened before the request left, `"unknown"` after a non-2xx or a connection failure (a provider can commit the action and THEN answer 5xx), `"acted"` after an unreadable 2xx. | Follow `retry_safe`, never the status alone: retry once when it is `true`; otherwise verify the provider's state or report. If it keeps failing, try another tool and check `health.ok` in `discover`. |
+| 502 | `provider_failed` | The provider call failed: it answered a non-2xx status, the connection failed, or it answered 2xx with a body too large to read (a tool whose upstream key is not configured is normally refused up front with `503 tool_unavailable`; a key that is removed, or cannot be read, between that check and the call ends the run here instead, with `outcome: "none"`). The hold was released — **nothing was billed**. The body carries `outcome` and `retry_safe` (see *Retrying a failed run*): `"none"` when the failure happened before the request left, `"unknown"` after a non-2xx or a connection failure (a provider can commit the action and THEN answer 5xx), `"acted"` after an unreadable 2xx. | Follow `retry_safe`, never the status alone: retry once when it is `true`; otherwise verify the provider's state or report. If it keeps failing, try another tool and check `health.ok` in `discover`. |
 | 502 | `usage_contract` | The tool's metering contract failed: a hook errored or did not finish in its window. The body carries `outcome` and `retry_safe`: `"acted"` when the provider answered 2xx (the action happened; the platform absorbed the cost), `"none"` when the failure was in the request-building hook before dispatch. **Nothing was billed** either way. | Follow `retry_safe`. With `outcome: "acted"` and `retry_safe: false`, do **not** retry — verify the provider's state through a read-only tool or switch tools, and tell the operator the call went through but was not metered. |
 | 504 | `provider_timeout` | The provider did not answer within the tool's timeout. The **outcome is unknown**: the request left and the provider may have acted. The body carries `outcome: "unknown"` and `retry_safe`. Nothing was billed. | Follow `retry_safe`. When it is `false`, do **NOT** retry blindly — the action may already have happened (an email sent, an order placed): check the provider's own state through a read-only tool, or switch to a different tool and tell the operator the first call's outcome is unknown. |
 | 503 | `tool_router_disabled` | The Tool Router is switched off on this deployment | Stop; an operator has to enable it. |
-| 503 | `tool_unavailable` (on `run`) | The tool's upstream key is not configured, so it cannot be served right now. Refused before any hold or run row; nothing was sent, nothing was charged. | Do not retry the same tool in a loop; `discover` an alternative for the same job, or tell your operator which tool is unavailable. |
+| 503 | `tool_unavailable` (on `run`) | The tool's upstream key is not configured, so it cannot be served right now. Refused before any hold or run row; nothing was sent, nothing was charged. (A key removed after this check, while the run is under way, answers `502 provider_failed` with `outcome: "none"` instead.) | Do not retry the same tool in a loop; `discover` an alternative for the same job, or tell your operator which tool is unavailable. |
 | 503 | `tool_unavailable` (on `balance`) | The wallet store did not answer in time. No figure is reported rather than a possibly-wrong one — a `0` here would read as an empty wallet. Nothing was charged. | Retry after `Retry-After` seconds. Do not treat it as "no balance"; keep using your last known figure until a `balance` call succeeds. |
 | 500 | `tool_unavailable` / `internal_error` | A server-side fault before dispatch | Nothing was billed. Retry once, then report. |
 
@@ -366,9 +366,22 @@ keep them with the `run_id` when you report.
 **A run has no idempotency key.** If YOUR side gave up on a `run` call — a
 client timeout, a dropped connection, a crashed process — you have no
 response and no `outcome`, and sending the same run again executes the tool
-again and bills it again. Find the first attempt before you decide:
-`GET /v1/tools/runs?tool_id=<id>` lists your newest runs first, and
-`runs get` on the match tells you whether it completed and what it cost.
+again and bills it again. Look for the first attempt before you decide:
+`GET /v1/tools/runs?tool_id=<id>` lists your newest runs first.
+
+- **No run of that tool at or after the moment you sent it:** the attempt
+  never got far enough to be recorded, so nothing was sent or billed. A
+  retry is safe.
+- **Exactly one candidate, and you can confirm it is yours** (`runs get`
+  shows your input, `payload_state: "available"`): act on that run, not on a
+  new one. `completed` already did the work and carries its `billed_usd`;
+  for any other status, report it with its `error_code` instead of
+  re-sending.
+- **Anything else** — several runs of that tool in the window (other
+  processes using the same key or agent), or a candidate whose input you
+  cannot see: **do not retry.** The list carries no request id, so you cannot
+  tell which run was yours. Report the tool id and the time you sent the run
+  to your operator.
 
 A successful run whose billing record could not be written answers 200 with
 `billed_usd: null` and `billing: "unrecorded"`: you have the output, nothing
