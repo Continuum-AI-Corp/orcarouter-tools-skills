@@ -147,7 +147,6 @@ Success `200`:
     "run_id": "run_01J9…",
     "status": "completed",
     "units": 5,
-    "cost_usd": 0.02,
     "billed_usd": 0.025,
     "quoted_usd": 0.025,
     "latency_ms": 812,
@@ -160,9 +159,8 @@ Success `200`:
 - `output` is the tool's result (JSON, shape is tool-specific).
 - `billed_usd` is what the workspace actually paid: the tool's sell price
   × the units the provider reported, never more than 1.25 × `quoted_usd`.
-  It does not depend on `cost_usd` (the provider's own cost, reported for
-  reference). The `X-Orca-Tool-Cost` response header carries the same
-  number. `quoted_usd` was the hold.
+  It depends only on that price and those units. The `X-Orca-Tool-Cost`
+  response header carries the same number. `quoted_usd` was the hold.
 - `budget` keys are present only when a cap applies. `sandbox: true` appears
   instead of `budget` for a sandbox agent: the run was **simulated, never
   dispatched to the provider, and never billed**.
@@ -205,9 +203,9 @@ curl -sS "$ORCA_BASE/v1/tools/runs/run_01J9…" \
   -H "Authorization: Bearer $ORCA_KEY"
 ```
 
-Returns the stored run: `run_id, connector_id, status, quoted_usd,
-billed_usd, units, cost_usd, latency_ms, error_code, error, input, output,
-payload_state, created_at, finished_at`. Only **your own** runs resolve — a
+Returns the stored run: `run_id, connector_id, run_ref, status, quoted_usd,
+billed_usd, sell_unit_usd, units, latency_ms, error_code, error, sanitized,
+refund_pending, input, output, payload_state, created_at, finished_at`. Only **your own** runs resolve — a
 run made by another agent, even one in the same workspace, is
 `404 run_not_found`, the same answer as a run id that never existed. Use it
 when a run call timed out client-side and you need to know whether it
@@ -294,7 +292,6 @@ These come from the middleware in front of `/v1/tools`, in four shapes.
 | Shape | Status | When |
 | --- | --- | --- |
 | `{ "error": "agent_paused" \| "agent_quarantined" \| "agent_unavailable", "agent_id": int, "reason": string }` | 403 | The agent your key is bound to may not act: paused, quarantined, or its binding no longer resolves (row gone, or it no longer belongs to the key's workspace). **This is the usual answer for a paused agent**, not `agent_not_active`. |
-| `{ "error": "agent_binding_required", "reason": string }` | 403 | The key is a plain workspace key, not bound to any agent. `/v1/tools` is agent-only. |
 | `{ "error": "workspace_suspended", "reason": string, "support_email": string }` | 403 | The workspace is suspended. |
 | `{ "error": { "message": string, "type": string, "code": string } }` | 401 / 403 / 5xx | Everything else the key layer refuses: missing or invalid key, a banned user, an IP the key does not permit, a group the key cannot use, or `"unable to verify agent status"` when the agent lookup itself failed. The message is human-readable; `error.code` is **not** one of the tool-router codes below. |
 
@@ -308,9 +305,9 @@ Two more that carry no JSON body of ours at all:
   `{ "error": { "message", "type", "code" } }` shape above.
 
 None of these charged anything and none of them sent anything to a provider.
-`agent_paused`, `agent_quarantined`, `agent_unavailable`,
-`agent_binding_required` and `workspace_suspended` are all **terminal for this
-key**: stop the batch and tell your operator. Retrying cannot fix them.
+`agent_paused`, `agent_quarantined`, `agent_unavailable` and
+`workspace_suspended` are all **terminal for this key**: stop the batch and
+tell your operator. Retrying cannot fix them.
 
 ### Tool-router errors (the `success` / `code` envelope)
 
@@ -318,7 +315,7 @@ key**: stop the batch and tell your operator. Retrying cannot fix them.
 | --- | --- | --- | --- |
 | 400 | `bad_input` | The body is not JSON, `input` is not an object, or it fails the tool's schema | Re-read `inspect`, fix the input. Nothing was charged. |
 | 402 | `insufficient_balance` | The quote did not fit the workspace wallet **or your own key's remaining quota** — the key's quota is reserved BEFORE the wallet, so a workspace whose wallet is fully funded still answers this code when the key is nearly spent | Stop, and report WHICH balance — they have different remedies. Call `balance` and compare: `data.wallet_usd` low ⇒ the workspace needs a top-up; `data.wallet_usd` healthy while `data.spendable_usd` is much lower or `0` ⇒ the limit is your key's own quota (or your member budget), and a top-up changes nothing — an operator has to raise the key's quota. Retrying before the right one is raised fails identically. |
-| 402 | `budget_exceeded` | The agent's monthly cap or this ref's run envelope cannot cover the quote | Stop this batch. Reduce the request (fewer units) only if that plausibly fits; otherwise report. |
+| 402 | `budget_exceeded` | The agent's monthly cap or this ref's run envelope cannot cover the quote, or the workspace member you authenticate as has reached a hard-stop monthly budget (`balance` then reports `data.spendable_usd: 0`) | Stop this batch. Reduce the request (fewer units) only if that plausibly fits; otherwise report. A member budget needs a workspace admin to raise it or the month to roll over. |
 | 402 | `policy_declined` (policy is judged at the quote × 1.25 ceiling that a run may bill, rounded up to the cent — an operator setting `per_txn_max` or `approval_threshold` should set it at or above that ceiling) | The agent's spend policy declined the run (a deny rule, or approval required). `deny` carries `reason`, `limit?`, `approval_id?`, `hint` | If `deny.approval_id` is set, a human has to approve it: wait, then RETRY the same run with `"approval_id": <id>` in the body. If there is no `approval_id`, the decision is final for this input. |
 | 403 | `access_denied` | The calling key is **local-only** — fenced to local hardware and never allowed to spend — so `run` is refused at the door, before the schema, the policy, the money and the provider. `discover`, `inspect` and `balance` are NOT refused: they spend nothing. Nothing was sent, nothing was charged. | **Terminal for this key.** Stop the batch and tell your operator to turn local-only off for this key, or to issue you one that may spend. This is a key SETTING, not a balance, so no top-up and no retry clears it — every attempt answers identically. |
 | 403 | `api_key_not_spendable` | The calling key stopped being spendable: disabled, expired, switched to local-only, unbound from its agent, or rebound to another workspace. It is asked twice — once while the run reserves the money and once again immediately before the provider is called — so it can also land on a key that was fine when the run started. Nothing was sent; anything held was handed straight back, so nothing was charged. | **Terminal for this key.** Stop the batch and tell your operator. This is the key's CONFIGURATION, not a lack of funds (`402 insufficient_balance` is the "no room to pay" answer), so topping the wallet up does not clear it and neither does a retry — the key has to be re-enabled, re-bound, or replaced. |
@@ -330,11 +327,12 @@ key**: stop the batch and tell your operator. Retrying cannot fix them.
 | 404 | `run_not_found` | No run with that id in your workspace | Check the id. |
 | 429 | `rate_limited` | Too many runs from **your key** per minute | Back off for `Retry-After` seconds, then continue. Pacing your own loop fixes this. |
 | 429 | `upstream_busy` | The tool's **provider** is at its concurrency or rate ceiling — platform-wide, not yours. Nothing was sent and nothing was billed; the body carries `outcome: "none"`, `retry_safe: true` and `retry_after` in seconds. | Pacing your own loop will **not** help: the saturation is shared. Either wait `Retry-After` seconds, or `discover` an alternative tool for the same job and use it now. If you have a batch to get through, prefer the alternative — this ceiling is usually a provider's account quota and will not clear quickly. |
-| 502 | `provider_failed` | The provider call failed: it answered a non-2xx status, the connection failed, or it answered 2xx with a body too large to read (a credential that cannot be resolved is `500 tool_unavailable`, not this code). The hold was released — **nothing was billed**. The body carries `outcome` and `retry_safe` (see *Retrying a failed run*): `"none"` when the failure happened before the request left, `"unknown"` after a non-2xx or a connection failure (a provider can commit the action and THEN answer 5xx), `"acted"` after an unreadable 2xx. | Follow `retry_safe`, never the status alone: retry once when it is `true`; otherwise verify the provider's state or report. If it keeps failing, try another tool and check `health.ok` in `discover`. |
+| 502 | `provider_failed` | The provider call failed: it answered a non-2xx status, the connection failed, or it answered 2xx with a body too large to read (a credential that is not configured is `503 tool_unavailable`, and one that cannot be resolved is `500 tool_unavailable` — neither is this code). The hold was released — **nothing was billed**. The body carries `outcome` and `retry_safe` (see *Retrying a failed run*): `"none"` when the failure happened before the request left, `"unknown"` after a non-2xx or a connection failure (a provider can commit the action and THEN answer 5xx), `"acted"` after an unreadable 2xx. | Follow `retry_safe`, never the status alone: retry once when it is `true`; otherwise verify the provider's state or report. If it keeps failing, try another tool and check `health.ok` in `discover`. |
 | 502 | `usage_contract` | The tool's metering contract failed: a hook errored or did not finish in its window. The body carries `outcome` and `retry_safe`: `"acted"` when the provider answered 2xx (the action happened; the platform absorbed the cost), `"none"` when the failure was in the request-building hook before dispatch. **Nothing was billed** either way. | Follow `retry_safe`. With `outcome: "acted"` and `retry_safe: false`, do **not** retry — verify the provider's state through a read-only tool or switch tools, and tell the operator the call went through but was not metered. |
 | 504 | `provider_timeout` | The provider did not answer within the tool's timeout. The **outcome is unknown**: the request left and the provider may have acted. The body carries `outcome: "unknown"` and `retry_safe`. Nothing was billed. | Follow `retry_safe`. When it is `false`, do **NOT** retry blindly — the action may already have happened (an email sent, an order placed): check the provider's own state through a read-only tool, or switch to a different tool and tell the operator the first call's outcome is unknown. |
 | 503 | `tool_router_disabled` | The Tool Router is switched off on this deployment | Stop; an operator has to enable it. |
-| 503 | `tool_unavailable` (on `balance` only) | The wallet store did not answer in time. No figure is reported rather than a possibly-wrong one — a `0` here would read as an empty wallet. Nothing was charged. | Retry after `Retry-After` seconds. Do not treat it as "no balance"; keep using your last known figure until a `balance` call succeeds. |
+| 503 | `tool_unavailable` (on `run`) | The tool's upstream key is not configured, so it cannot be served right now. Refused before any hold or run row; nothing was sent, nothing was charged. | Do not retry the same tool in a loop; `discover` an alternative for the same job, or tell your operator which tool is unavailable. |
+| 503 | `tool_unavailable` (on `balance`) | The wallet store did not answer in time. No figure is reported rather than a possibly-wrong one — a `0` here would read as an empty wallet. Nothing was charged. | Retry after `Retry-After` seconds. Do not treat it as "no balance"; keep using your last known figure until a `balance` call succeeds. |
 | 500 | `tool_unavailable` / `internal_error` | A server-side fault before dispatch | Nothing was billed. Retry once, then report. |
 
 ### Retrying a failed run
@@ -358,11 +356,19 @@ read-only tool where one exists, and otherwise report to your operator with
 the `run_id` and the `outcome` value and let them decide. Nothing was billed
 on any of these paths.
 
-A run row is written for every attempt that reached the policy stage, so
+A run row is written for every attempt that reached the policy stage (except
+a `503 tool_unavailable`, which is refused before the row), so
 `runs get` shows `blocked` (policy/firewall) and `failed` (provider) rows with
 their `error_code`, including `usage_contract` and `provider_timeout`. The row
 does not repeat `outcome` / `retry_safe`: those are on the run response —
 keep them with the `run_id` when you report.
+
+**A run has no idempotency key.** If YOUR side gave up on a `run` call — a
+client timeout, a dropped connection, a crashed process — you have no
+response and no `outcome`, and sending the same run again executes the tool
+again and bills it again. Find the first attempt before you decide:
+`GET /v1/tools/runs?tool_id=<id>` lists your newest runs first, and
+`runs get` on the match tells you whether it completed and what it cost.
 
 A successful run whose billing record could not be written answers 200 with
 `billed_usd: null` and `billing: "unrecorded"`: you have the output, nothing
@@ -387,7 +393,8 @@ not a reason to retry.
    `health.ok` true.
 2. `inspect` it; build `input` strictly from `input_schema`.
 3. `balance` if you are about to run more than a couple of calls.
-4. `run` with a small limit and an `X-Orca-Run-Ref` naming the job.
+4. `run` with a small limit. Add `X-Orca-Run-Ref` only if your operator gave
+   you a run reference; never make one up.
 5. Report `billed_usd` to the operator, use the `output`, widen the limit only
    if needed.
 6. On `policy_declined` with an `approval_id`: wait for the human, then retry
