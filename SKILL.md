@@ -365,23 +365,21 @@ keep them with the `run_id` when you report.
 
 **A run has no idempotency key.** If YOUR side gave up on a `run` call — a
 client timeout, a dropped connection, a crashed process — you have no
-response and no `outcome`, and sending the same run again executes the tool
-again and bills it again. Look for the first attempt before you decide:
-`GET /v1/tools/runs?tool_id=<id>` lists your newest runs first.
+response and no `outcome`, and you cannot tell whether the request is still
+running on the server: once the provider call has started it runs to the
+end whether or not you are still listening, and the run row is only written
+after several checks, so an empty run list at that
+moment proves nothing. Sending the run again can execute it, and bill it, a
+second time.
 
-- **No run of that tool at or after the moment you sent it:** the attempt
-  never got far enough to be recorded, so nothing was sent or billed. A
-  retry is safe.
-- **Exactly one candidate, and you can confirm it is yours** (`runs get`
-  shows your input, `payload_state: "available"`): act on that run, not on a
-  new one. `completed` already did the work and carries its `billed_usd`;
-  for any other status, report it with its `error_code` instead of
-  re-sending.
-- **Anything else** — several runs of that tool in the window (other
-  processes using the same key or agent), or a candidate whose input you
-  cannot see: **do not retry.** The list carries no request id, so you cannot
-  tell which run was yours. Report the tool id and the time you sent the run
-  to your operator.
+- **Retry automatically only when the tool is `idempotent: true`** (from
+  `discover` / `inspect`): repeating it has no extra effect.
+- **Otherwise, do not re-send.** Look the attempt up with
+  `GET /v1/tools/runs?tool_id=<id>` (newest first). If one run is clearly
+  yours (`runs get` shows your input), act on it — a `completed` run already
+  did the work and carries its `billed_usd`. If you find none, or cannot tell
+  which run is yours, report the tool id and the time you sent the run to
+  your operator and let them decide.
 
 A successful run whose billing record could not be written answers 200 with
 `billed_usd: null` and `billing: "unrecorded"`: you have the output, nothing
