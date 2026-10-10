@@ -358,8 +358,9 @@ read-only tool where one exists, and otherwise report to your operator with
 the `run_id` and the `outcome` value and let them decide. Nothing was billed
 on any of these paths.
 
-A run row is written for every attempt that reached the policy stage (except
-a `503 tool_unavailable`, which is refused before the row), so
+A run row is written for every attempt the policy actually ruled on (a
+`503 tool_unavailable`, or a `500` from an internal fault before that point,
+leaves no row), so
 `runs get` shows `blocked` (policy/firewall) and `failed` (provider) rows with
 their `error_code`, including `usage_contract` and `provider_timeout`. The row
 does not repeat `outcome` / `retry_safe`: those are on the run response —
