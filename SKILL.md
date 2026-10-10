@@ -374,14 +374,14 @@ after several checks, so an empty run list at that
 moment proves nothing. Sending the run again can execute it, and bill it, a
 second time.
 
-- **Retry automatically only when the tool is `idempotent: true`** (from
-  `discover` / `inspect`): repeating it has no extra effect.
-- **Otherwise, do not re-send.** Look the attempt up with
-  `GET /v1/tools/runs?tool_id=<id>` (newest first). If one run is clearly
-  yours (`runs get` shows your input), act on it — a `completed` run already
-  did the work and carries its `billed_usd`. If you find none, or cannot tell
-  which run is yours, report the tool id and the time you sent the run to
-  your operator and let them decide.
+**Do not re-send automatically — not even an `idempotent: true` tool.**
+Idempotent means repeating the call has no extra effect at the PROVIDER; it
+does not deduplicate OrcaRouter runs, so a second run is billed again. Look
+the attempt up with `GET /v1/tools/runs?tool_id=<id>` (newest first). If one
+run is clearly yours (`runs get` shows your input), act on it — a `completed`
+run already did the work and carries its `billed_usd`. If you find none, or
+cannot tell which run is yours, report the tool id and the time you sent the
+run to your operator; they decide whether to re-send and possibly pay twice.
 
 A successful run whose billing record could not be written answers 200 with
 `billed_usd: null` and `billing: "unrecorded"`: you have the output, nothing
