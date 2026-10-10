@@ -27,6 +27,42 @@ Five verbs, all plain HTTP under `/v1/tools`:
 | runs get | `GET /v1/tools/runs/:run_id` | Re-read a run you made |
 | balance | `GET /v1/tools/balance` | What you can still spend |
 
+## No key yet? Send the user to sign up
+
+Check for `ORCA_KEY` **before the first call**. If it is unset or empty, do not
+call any endpoint — every one of them answers `401` without a key. Walk the
+user through getting one instead, in their language, with these links (they
+are the hosted console; on a self-hosted deployment use its console host, not
+the API host):
+
+| Step | Link |
+| --- | --- |
+| New to OrcaRouter: create an account | `https://www.orcarouter.ai/register?redirect=/console/token` |
+| Already have an account: sign in | `https://www.orcarouter.ai/login?redirect=/console/token` |
+| Create or copy an API key | `https://www.orcarouter.ai/console/token` |
+
+Both sign-up and sign-in land on the API key page when they finish. Some
+sign-in methods (GitHub, Google, an emailed confirmation) can drop the user on
+the console home instead, so always give the API key page link too. Say it
+roughly like this:
+
+> To use OrcaRouter Tools you need an API key:
+> 1. No account yet? Sign up at https://www.orcarouter.ai/register?redirect=/console/token
+>    — or sign in at https://www.orcarouter.ai/login?redirect=/console/token
+> 2. On the API key page (https://www.orcarouter.ai/console/token if you are
+>    not taken there), copy a key — a new account already has one — or
+>    create one.
+> 3. In your terminal run `export ORCA_KEY=<your key>` (add it to `~/.zshrc`
+>    or `~/.bashrc` to keep it), then restart me.
+>
+> Please don't paste the key into this chat.
+
+**Never ask the user to paste the key into the conversation**, and never offer
+to store it for them: a key typed into a chat ends up in transcripts and logs.
+Once they say it is set, confirm with `GET /v1/tools/balance` — `200` means
+carry on with the task; `401` means the key is wrong (see *Authentication
+refusals*).
+
 ## Authentication
 
 Every call carries an OrcaRouter **Bearer API key**. The server derives the
@@ -311,12 +347,17 @@ None of these charged anything and none of them sent anything to a provider.
 `workspace_suspended` are all **terminal for this key**: stop the batch and
 tell your operator. Retrying cannot fix them.
 
+A `401` in the last shape means the key itself is missing, mistyped, deleted
+or expired. Do not retry it. Tell the user to create a new key at
+`https://www.orcarouter.ai/console/token` and update `ORCA_KEY`, exactly as in
+*No key yet?* above — and again, not to paste it into the chat.
+
 ### Tool-router errors (the `success` / `code` envelope)
 
 | Status | `code` | Meaning | What to do |
 | --- | --- | --- | --- |
 | 400 | `bad_input` | The body is not JSON, `input` is not an object, or it fails the tool's schema | Re-read `inspect`, fix the input. Nothing was charged. |
-| 402 | `insufficient_balance` | The quote did not fit the workspace wallet **or your own key's remaining quota** — the key's quota is reserved BEFORE the wallet, so a workspace whose wallet is fully funded still answers this code when the key is nearly spent | Stop, and report WHICH balance — they have different remedies. Call `balance` and compare: `data.wallet_usd` low ⇒ the workspace needs a top-up; `data.wallet_usd` healthy while `data.spendable_usd` is much lower or `0` ⇒ the limit is your key's own quota (or your member budget), and a top-up changes nothing — an operator has to raise the key's quota. Retrying before the right one is raised fails identically. |
+| 402 | `insufficient_balance` | The quote did not fit the workspace wallet **or your own key's remaining quota** — the key's quota is reserved BEFORE the wallet, so a workspace whose wallet is fully funded still answers this code when the key is nearly spent | Stop, and report WHICH balance — they have different remedies. Call `balance` and compare: `data.wallet_usd` low ⇒ the workspace needs a top-up: send the user to `https://www.orcarouter.ai/console/billing` to add funds, and mention that turning on auto top-up on the same page keeps it from running dry again; `data.wallet_usd` healthy while `data.spendable_usd` is much lower or `0` ⇒ the limit is your key's own quota (or your member budget), and a top-up changes nothing — an operator has to raise the key's quota at `https://www.orcarouter.ai/console/token`. Retrying before the right one is raised fails identically. Never make or start a payment yourself. |
 | 402 | `budget_exceeded` | The agent's monthly cap or this ref's run envelope cannot cover the quote, or the workspace member you authenticate as has reached a hard-stop monthly budget (`balance` then reports `data.spendable_usd: 0`) | Stop this batch. Reduce the request (fewer units) only if that plausibly fits; otherwise report. A member budget needs a workspace admin to raise it or the month to roll over. |
 | 402 | `policy_declined` (policy is judged at the quote × 1.25 ceiling that a run may bill, rounded up to the cent — an operator setting `per_txn_max` or `approval_threshold` should set it at or above that ceiling) | The agent's spend policy declined the run (a deny rule, or approval required). `deny` carries `reason`, `limit?`, `approval_id?`, `hint` | If `deny.approval_id` is set, a human has to approve it: wait, then RETRY the same run with `"approval_id": <id>` in the body. If there is no `approval_id`, the decision is final for this input. |
 | 403 | `access_denied` | The calling key is **local-only** — fenced to local hardware and never allowed to spend — so `run` is refused at the door, before the schema, the policy, the money and the provider. `discover`, `inspect` and `balance` are NOT refused: they spend nothing. Nothing was sent, nothing was charged. | **Terminal for this key.** Stop the batch and tell your operator to turn local-only off for this key, or to issue you one that may spend. This is a key SETTING, not a balance, so no top-up and no retry clears it — every attempt answers identically. |
@@ -402,6 +443,7 @@ not a reason to retry.
 
 ## Typical flow
 
+0. No `ORCA_KEY`? Stop and walk the user through *No key yet?* first.
 1. `discover` with the task in plain words (`"scrape a product page"`,
    `"find the CEO of a company"`); pick the best `verified` result with
    `health.ok` true.
@@ -414,7 +456,8 @@ not a reason to retry.
 6. On `policy_declined` with an `approval_id`: wait for the human, then retry
    with `approval_id` in the body. On `blocked_by_firewall` with a
    `firewall_approval_id`: wait for the human, then retry with the id in
-   `X-OrcaRouter-Firewall-Approval`. On `402` money codes: stop and report.
+   `X-OrcaRouter-Firewall-Approval`. On `402` money codes: stop and report,
+   with the top-up or key-quota link the error table gives.
    On `502` `provider_failed` / `usage_contract` and `504` `provider_timeout`:
    retry only when `retry_safe` is `true`; otherwise `runs get`, verify the
    provider's state or switch tools, and report — the first call went

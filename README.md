@@ -23,12 +23,18 @@ curl -fsSL https://cdn.jsdelivr.net/npm/@orcarouter/tools-skill/SKILL.md \
 
 ## Setup
 
-Create an API key in the OrcaRouter console and export it:
+You need an OrcaRouter API key. No account yet? Sign up at
+<https://www.orcarouter.ai/register?redirect=/console/token> — or sign in at
+<https://www.orcarouter.ai/login?redirect=/console/token>. Either one lands on
+the API key page (<https://www.orcarouter.ai/console/token>); a new account
+already has a key there. Copy it and export it:
 
 ```
 export ORCA_KEY=<your OrcaRouter API key>
 ```
 
 The skill reads the key from `ORCA_KEY`. Never paste the key into a prompt.
+If you skip this step, the agent walks you through it the first time it needs
+a tool.
 
 Full documentation: [docs.orcarouter.ai/agent-infra/tools](https://docs.orcarouter.ai/agent-infra/tools/overview).

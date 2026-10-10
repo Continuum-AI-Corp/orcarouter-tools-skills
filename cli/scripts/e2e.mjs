@@ -242,15 +242,20 @@ const main = async () => {
       const m = json(['meta', ...base]);
       assert.equal(m.capabilities.async, false);
       assert.equal(m.capabilities.run_stop, false);
-      assert.equal(m.skill_url, '/.well-known/orca/tools/SKILL.md');
+      // The published package (or the deployment's TOOLS_SKILL_URL), not a
+      // path on this server: the server no longer embeds the document.
+      assert.match(m.skill_url, /^https?:\/\/[^/]+\/.*SKILL\.md$/);
     });
 
-    check('the published skill is served and points at this API', () => {
-      const doc = execFileSync('curl', ['-sS', `${up.base}/.well-known/orca/tools/SKILL.md`], {
-        encoding: 'utf8',
-      });
-      assert.match(doc, /^---\nname: orcarouter-tools/);
-      assert.match(doc, /api\.orcarouter\.ai/);
+    check('the legacy skill path redirects to the published document', () => {
+      const out = execFileSync(
+        'curl',
+        ['-sS', '-o', '/dev/null', '-w', '%{http_code} %{redirect_url}', `${up.base}/.well-known/orca/tools/SKILL.md`],
+        { encoding: 'utf8' },
+      );
+      const [code, location] = out.trim().split(' ');
+      assert.equal(code, '302');
+      assert.equal(location, json(['meta', ...base]).skill_url);
     });
 
     // LAST, because it is the path the console's CLI tab and the skill both
