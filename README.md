@@ -1,6 +1,6 @@
 # Agent-tools
 
-An OrcaRouter agent skill for discovering, inspecting and running pay-per-call tools
+An agent skill for discovering, inspecting and running pay-per-call tools
 (web search, scraping, data enrichment, and more) through OrcaRouter. One API
 key, one balance; every run is quoted before it executes and billed to your
 workspace wallet.
