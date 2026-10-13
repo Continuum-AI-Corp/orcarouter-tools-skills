@@ -8,6 +8,15 @@
     "tools",
     "agent"
   ],
+  "homepage": "https://github.com/Continuum-AI-Corp/orcarouter-tools-skills/tree/main/cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Continuum-AI-Corp/orcarouter-tools-skills.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Continuum-AI-Corp/orcarouter-tools-skills/issues"
+  },
   "type": "module",
   "bin": {
     "orca-tools": "bin/orca-tools.js"
