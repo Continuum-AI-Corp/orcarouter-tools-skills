@@ -37,13 +37,11 @@ Works with **Claude Code** · **Codex** · **Cursor** · **OpenClaw** · **Herme
 
 ## Why OrcaRouter Tools
 
-| | |
-|---|---|
-| 🔑 **One key, one wallet** | One OrcaRouter API key covers every tool. The same wallet pays for your model calls too. |
-| 🔎 **Discover by job, not by vendor** | Ask for "company enrichment" or "tiktok posts" and get the matching tools ranked, with price, 7-day success rate and latency. |
-| 🔁 **Alternatives when a tool misses** | Tools that do the same job carry a `route_group`. When one fails or finds nothing, your agent lists the others and tries the next one itself. |
-| 💵 **Pay per call** | No subscription and no contract. Every run is quoted before it executes, and a call that fails is not billed. |
-| 🛡️ **Your rules on every call** | Set a budget per agent, a per-call limit and approval thresholds. Above the limit, the agent asks a human first. |
+- 🔑 **One key, one wallet.** One OrcaRouter API key covers every tool. The same wallet pays for your model calls too.
+- 🔎 **Discover by job, not by vendor.** Ask for "company enrichment" or "tiktok posts" and get the matching tools ranked, with price, 7-day success rate and latency.
+- 🔁 **Alternatives when a tool misses.** Tools that do the same job carry a `route_group`. When one fails or finds nothing, your agent lists the others and tries the next one itself.
+- 💵 **Pay per call.** No subscription and no contract. Every run is quoted before it executes, and a call that fails is not billed.
+- 🛡️ **Your rules on every call.** Set a budget per agent, a per-call limit and approval thresholds. Above the limit, the agent asks a human first.
 
 ## Quick start
 
@@ -141,11 +139,11 @@ A call that fails costs nothing. It appears in the run log, voided at $0.00:
 
 ## In this repository
 
-| Path | Package | What it is |
-|---|---|---|
-| [`SKILL.md`](SKILL.md) | [`@orcarouter/tools-skill`](https://www.npmjs.com/package/@orcarouter/tools-skill) | The agent skill: how to discover, inspect and run tools, read errors and control spend |
-| [`cli/`](cli/) | [`@orcarouter/cli`](https://www.npmjs.com/package/@orcarouter/cli) | `orca-tools`, the command-line client |
-| [`assets/`](assets/) | | Images and the demo video used in this README |
+- **[`SKILL.md`](SKILL.md)**: the agent skill. How to discover, inspect and run tools, read errors and control spend.
+  Published as [`@orcarouter/tools-skill`](https://www.npmjs.com/package/@orcarouter/tools-skill).
+- **[`cli/`](cli/)**: `orca-tools`, the command-line client.
+  Published as [`@orcarouter/cli`](https://www.npmjs.com/package/@orcarouter/cli).
+- **[`assets/`](assets/)**: the images and the demo video used in this README.
 
 ## Links
 
