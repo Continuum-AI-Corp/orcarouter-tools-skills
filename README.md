@@ -4,6 +4,8 @@
 
 # OrcaRouter Tools
 
+**English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md)
+
 **One API key. 1,400+ data tools your AI agent can discover, compare and run, paid per call.**
 
 Web search, social media, company and people data, email finders, SEO, financial markets and more from 15 providers.
