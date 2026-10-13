@@ -23,7 +23,7 @@
     "test": "node --test test/*.test.mjs",
     "e2e": "node scripts/e2e.mjs"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   }
