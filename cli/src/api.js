@@ -153,6 +153,7 @@ export const discover = (opts) =>
       q: opts.q || '',
       ...(opts.limit ? { limit: opts.limit } : {}),
       ...(opts.category ? { category: opts.category } : {}),
+      ...(opts.routeGroup ? { route_group: opts.routeGroup } : {}),
       ...(opts.minScore != null ? { min_score: opts.minScore } : {}),
       ...(opts.includeUnavailable ? { include_unavailable: true } : {}),
     },

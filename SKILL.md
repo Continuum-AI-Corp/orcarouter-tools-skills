@@ -115,7 +115,10 @@ curl -sS "$ORCA_BASE/v1/tools/discover" \
   -d '{"q":"company enrichment","limit":5}'
 ```
 
-Body: `{ "q": string, "limit"?: int (1–10, default 10), "category"?: string }`.
+Body: `{ "q": string, "limit"?: int (1–10, default 10), "category"?: string,
+"route_group"?: string }`. With `route_group` the call lists that group's
+tools — see *When a tool fails or finds nothing* — up to 50 in one page, and
+`q` becomes optional.
 
 Returns `{ success, data: { results: [ ... ] } }`, each result:
 
@@ -131,7 +134,9 @@ Returns `{ success, data: { results: [ ... ] } }`, each result:
              "sell_usd": 0.005, "est_usd_for": { "units": 10, "usd": 0.05 } },
   "health": { "ok": true, "p50_ms": 640, "success_7d": 0.99 },
   "runs_30d": 1240,
-  "version": 3
+  "version": 3,
+  "route_group": "web.search",
+  "alternatives": 4
 }
 ```
 
@@ -144,6 +149,9 @@ Returns `{ success, data: { results: [ ... ] } }`, each result:
   priced the tool yet: it is listed, but `run` answers `403 tool_unpriced`.
 - `health.ok` false means the last probe failed; expect `502` and pick
   another tool if one exists.
+- `route_group` / `alternatives`: the tool does the same job as
+  `alternatives` other tools (same platform, same kind of answer). Absent
+  means no known substitute. See *When a tool fails or finds nothing*.
 
 ### 2. inspect
 
@@ -369,12 +377,12 @@ or expired. Do not retry it. Tell the user to create a new key at
 | 404 | `tool_not_found` | No live tool with that id | `discover` again; the tool may have been unlisted. |
 | 404 | `run_not_found` | No run with that id in your workspace | Check the id. |
 | 429 | `rate_limited` | Too many runs from **your key** per minute | Back off for `Retry-After` seconds, then continue. Pacing your own loop fixes this. |
-| 429 | `upstream_busy` | The tool's **provider** is at its concurrency or rate ceiling — platform-wide, not yours. Nothing was sent and nothing was billed; the body carries `outcome: "none"`, `retry_safe: true` and `retry_after` in seconds. | Pacing your own loop will **not** help: the saturation is shared. Either wait `Retry-After` seconds, or `discover` an alternative tool for the same job and use it now. If you have a batch to get through, prefer the alternative — this ceiling is usually a provider's account quota and will not clear quickly. |
+| 429 | `upstream_busy` | The tool's **provider** is at its concurrency or rate ceiling — platform-wide, not yours. Nothing was sent and nothing was billed; the body carries `outcome: "none"`, `retry_safe: true` and `retry_after` in seconds. | Pacing your own loop will **not** help: the saturation is shared. Either wait `Retry-After` seconds, or switch to an alternative now (`discover` with the tool's `route_group`; without one, `discover` the job again). If you have a batch to get through, prefer the alternative — this ceiling is usually a provider's account quota and will not clear quickly. |
 | 502 | `provider_failed` | The provider call failed: it answered a non-2xx status, the connection failed, or it answered 2xx with a body too large to read (a tool whose upstream key is not configured is normally refused up front with `503 tool_unavailable`; a key that is removed, or cannot be read, between that check and the call ends the run here instead, with `outcome: "none"`). The hold was released — **nothing was billed**. The body carries `outcome` and `retry_safe` (see *Retrying a failed run*): `"none"` when the failure happened before the request left, `"unknown"` after a non-2xx or a connection failure (a provider can commit the action and THEN answer 5xx), `"acted"` after an unreadable 2xx. | Follow `retry_safe`, never the status alone: retry once when it is `true`; otherwise verify the provider's state or report. If it keeps failing, try another tool and check `health.ok` in `discover`. |
 | 502 | `usage_contract` | The tool's metering contract failed: a hook errored or did not finish in its window. The body carries `outcome` and `retry_safe`: `"acted"` when the provider answered 2xx (the action happened; the platform absorbed the cost), `"none"` when the failure was in the request-building hook before dispatch. **Nothing was billed** either way. | Follow `retry_safe`. With `outcome: "acted"` and `retry_safe: false`, do **not** retry — verify the provider's state through a read-only tool or switch tools, and tell the operator the call went through but was not metered. |
 | 504 | `provider_timeout` | The provider did not answer within the tool's timeout. The **outcome is unknown**: the request left and the provider may have acted. The body carries `outcome: "unknown"` and `retry_safe`. Nothing was billed. | Follow `retry_safe`. When it is `false`, do **NOT** retry blindly — the action may already have happened (an email sent, an order placed): check the provider's own state through a read-only tool, or switch to a different tool and tell the operator the first call's outcome is unknown. |
 | 503 | `tool_router_disabled` | The Tool Router is switched off on this deployment | Stop; an operator has to enable it. |
-| 503 | `tool_unavailable` (on `run`) | The tool's upstream key is not configured, so it cannot be served right now. Refused before any hold or run row; nothing was sent, nothing was charged. (A key removed after this check, while the run is under way, answers `502 provider_failed` with `outcome: "none"` instead.) | Do not retry the same tool in a loop; `discover` an alternative for the same job, or tell your operator which tool is unavailable. |
+| 503 | `tool_unavailable` (on `run`) | The tool's upstream key is not configured, so it cannot be served right now. Refused before any hold or run row; nothing was sent, nothing was charged. (A key removed after this check, while the run is under way, answers `502 provider_failed` with `outcome: "none"` instead.) | Do not retry the same tool in a loop; switch to an alternative (`discover` with the tool's `route_group`; without one, `discover` the job again), or tell your operator which tool is unavailable. |
 | 503 | `tool_unavailable` (on `balance`) | The wallet store did not answer in time. No figure is reported rather than a possibly-wrong one — a `0` here would read as an empty wallet. Nothing was charged. | Retry after `Retry-After` seconds. Do not treat it as "no balance"; keep using your last known figure until a `balance` call succeeds. |
 | 500 | `tool_unavailable` / `internal_error` | A server-side fault before dispatch | Nothing was billed. Retry once, then report. |
 
@@ -441,6 +449,44 @@ billing takes so long that the platform closes the run first, the row reads
 reconciles that one by hand. It still means you were charged, and it is still
 not a reason to retry.
 
+## When a tool fails or finds nothing: try its alternatives
+
+OrcaRouter never switches tools for you. If a tool carries a `route_group`,
+you can: list the group, choose the order yourself, and keep track of what
+you already tried.
+
+1. **List the group** — `{"route_group": "<the tool's route_group>"}` to
+   `discover`. The whole group comes back in the catalog's own order. That
+   order is NOT a ranking; you decide.
+2. **Choose, in this order of importance:**
+   1. **Inputs you actually have.** `inspect` a candidate before running it:
+      one tool takes a username, another a numeric id or a URL. A tool whose
+      required inputs you cannot fill is not a candidate, whatever it costs.
+   2. **Reliability.** Skip `health.ok: false`. Prefer a higher
+      `health.success_7d` backed by a real `runs_30d`.
+   3. **Price for YOUR request.** `price.sell_usd` × the units you will ask
+      for (`est_usd_for` is only a sample). Cheapest first among the tools
+      left.
+   4. `health.p50_ms` breaks ties.
+3. **Keep your own list** of the tool ids you ran for this task and their
+   results. Never run the same tool twice with the same input, except the
+   single retry `retry_safe: true` allows.
+4. **Move to the next tool** when the run answers `502 provider_failed`,
+   `504 provider_timeout`, `429 upstream_busy` or `503 tool_unavailable`, or
+   answers 200 with an output that does not contain what you asked for (an
+   empty list, a null email). A 200 that found nothing was still billed when
+   the tool prices per call — count it.
+5. **Do not move on** after `400 bad_input` (fix the input for THAT tool),
+   a `402` (money: stop and report), a `403` (policy, firewall or key: stop
+   and report) or a `401`.
+6. **Only lookups are switched.** A tool that acts — sends, posts, buys,
+   books — is never followed by its alternative after `outcome: "unknown"`
+   or `"acted"`: the first one may already have done it.
+7. **Set a ceiling before you start** — a number of tools and an amount —
+   and stop at it. Three tries is usually enough; then report.
+8. **Report the chain**: each tool tried, what it returned (hit / nothing /
+   error code), what it cost, and the total.
+
 ## Typical flow
 
 0. No `ORCA_KEY`? Stop and walk the user through *No key yet?* first.
@@ -452,7 +498,8 @@ not a reason to retry.
 4. `run` with a small limit. Add `X-Orca-Run-Ref` only if your operator gave
    you a run reference; never make one up.
 5. Report `billed_usd` to the operator, use the `output`, widen the limit only
-   if needed.
+   if needed. If the tool failed or found nothing and it has a `route_group`,
+   pick the next one yourself (*When a tool fails or finds nothing*).
 6. On `policy_declined` with an `approval_id`: wait for the human, then retry
    with `approval_id` in the body. On `blocked_by_firewall` with a
    `firewall_approval_id`: wait for the human, then retry with the id in

@@ -37,6 +37,7 @@ Self-hosted deployment: add `--base https://<your API host>` to `keys add` or
 
 ```
 orca-tools discover -q <query> [-l <limit>] [-s <minScore>] [-c <category>] [-u]
+orca-tools discover -g <routeGroup> [-q <query>] [-u]
 orca-tools inspect  -t <toolId>
 orca-tools run      -t <toolId> (-i <json> | -f <file>) [-o <outFile>]
                     [--run-ref <ref>] [--approval-id <n>] [--firewall-approval <id>]
@@ -47,6 +48,11 @@ orca-tools meta
 orca-tools setup [--base <url>] [-k <key>]
 orca-tools keys add -k <key> -l <label> [--base <url>] | keys list | keys activate -l <label> | keys remove -l <label>
 ```
+
+`discover -g` lists the tools of one route group — a tool's `route_group`, which
+`discover` and `inspect` show with how many other tools share it. They are the
+alternatives to try when a tool failed or found nothing. The list is in catalog
+order, not ranked: you pick the next tool and keep track of what you ran.
 
 `-j` prints raw JSON (on a refusal, the whole error body goes to stderr).
 

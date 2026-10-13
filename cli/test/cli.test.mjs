@@ -219,3 +219,62 @@ test('an unreachable host exits 4 and names the host', async () => {
   assert.equal(r.status, 4);
   assert.match(r.stderr, /cannot reach http:\/\/127\.0\.0\.1:1/);
 });
+
+test('discover -g lists a route group: sends route_group, shows the GROUP column and the not-a-ranking footer', async () => {
+  routes.set('POST /v1/tools/discover', {
+    body: {
+      success: true,
+      data: {
+        results: [
+          { id: 'tomba.email-finder', provider: 'tomba', display_name: 'Tomba',
+            price: { mode: 'per_call', unit: '', for_sale: true, sell_usd: 0.012 },
+            health: { ok: true, verdict: 'healthy', p50_ms: 900 },
+            route_group: 'people.email.find', alternatives: 2 },
+          { id: 'leadmagic.email-finder', provider: 'leadmagic', display_name: 'LeadMagic',
+            price: { mode: 'per_call', unit: '', for_sale: true, sell_usd: 0.01 },
+            health: { ok: false, verdict: 'failing' },
+            route_group: 'people.email.find', alternatives: 2 },
+        ],
+      },
+    },
+  });
+  const r = await cli(['discover', '-g', 'people.email.find']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(last().body), { q: '', route_group: 'people.email.find' });
+  assert.match(r.stdout, /GROUP/);
+  assert.match(r.stdout, /tomba\.email-finder .*people\.email\.find \(\+2\)/);
+  assert.match(r.stdout, /2 tool\(s\) in people\.email\.find, in catalog order — NOT a ranking/);
+});
+
+test('discover without groups keeps the old columns; an empty group says so', async () => {
+  routes.set('POST /v1/tools/discover', {
+    body: { success: true, data: { results: [
+      { id: 'exa.search', provider: 'exa', display_name: 'Exa', score: 3.2,
+        price: { mode: 'per_result', unit: 'result', for_sale: true, sell_usd: 0.005 },
+        health: { ok: true, verdict: 'healthy', p50_ms: 640 } },
+    ] } },
+  });
+  let r = await cli(['discover', '-q', 'search']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /GROUP/);
+  assert.deepEqual(JSON.parse(last().body), { q: 'search' });
+
+  routes.set('POST /v1/tools/discover', { body: { success: true, data: { results: [] } } });
+  r = await cli(['discover', '-g', 'nobody.has.this']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /No live tools in route group nobody\.has\.this/);
+});
+
+test('inspect names the route group and the command that lists the alternatives', async () => {
+  routes.set('GET /v1/tools/tomba.email-finder', {
+    body: { success: true, data: {
+      id: 'tomba.email-finder', provider: 'tomba', display_name: 'Tomba',
+      price: { mode: 'per_call', unit: '', for_sale: true, sell_usd: 0.012 },
+      health: { ok: true, verdict: 'healthy' }, idempotent: true,
+      route_group: 'people.email.find', alternatives: 0, input_schema: { type: 'object' },
+    } },
+  });
+  const r = await cli(['inspect', '-t', 'tomba.email-finder']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /group +people\.email\.find \(\+0\) — alternatives: orca-tools discover -g people\.email\.find/);
+});
