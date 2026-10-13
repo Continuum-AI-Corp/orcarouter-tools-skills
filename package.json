@@ -9,6 +9,14 @@
     "tools",
     "claude"
   ],
+  "homepage": "https://github.com/Continuum-AI-Corp/orcarouter-tools-skills#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Continuum-AI-Corp/orcarouter-tools-skills.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Continuum-AI-Corp/orcarouter-tools-skills/issues"
+  },
   "files": [
     "SKILL.md"
   ],
