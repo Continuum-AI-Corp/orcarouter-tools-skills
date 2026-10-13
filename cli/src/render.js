@@ -79,23 +79,40 @@ export const table = (headers, rows) => {
   return [line(headers), line(widths.map((w) => '-'.repeat(w))), ...rows.map(line)].join('\n');
 };
 
-export const renderDiscover = (results) => {
+/**
+ * A tool's route group with how many OTHER live tools share it, or '' when it
+ * has no known substitute. The count is what makes the column worth reading:
+ * "+0" says the group exists but nothing else in it can be run right now.
+ */
+export const groupLine = (r) =>
+  r?.route_group ? `${r.route_group} (+${Number(r.alternatives ?? 0)})` : '';
+
+export const renderDiscover = (results, routeGroup) => {
   if (!results?.length) {
-    return 'No tools matched. Try fewer words, or a noun phrase ("tiktok posts", "company funding").';
+    return routeGroup
+      ? `No live tools in route group ${routeGroup}. Check the name against a tool's route_group, or add -u to include unavailable ones.`
+      : 'No tools matched. Try fewer words, or a noun phrase ("tiktok posts", "company funding").';
   }
+  // The GROUP column only when some result has one: most searches return
+  // tools without a substitute, and an always-empty column is noise.
+  const grouped = results.some((r) => r.route_group);
   const rows = results.map((r) => [
     r.id,
     r.display_name || '',
     r.provider_label || r.provider || '',
     priceLine(r.price),
     healthLine(r.health),
+    ...(grouped ? [groupLine(r)] : []),
     r.score == null ? '' : Number(r.score).toFixed(1),
   ]);
-  return (
-    table(['ID', 'NAME', 'UPSTREAM', 'PRICE', 'HEALTH', 'SCORE'], rows) +
-    `\n\n${results.length} result(s). Inspect one before running it:\n` +
-    `  orca-tools inspect -t ${results[0].id}`
-  );
+  const headers = ['ID', 'NAME', 'UPSTREAM', 'PRICE', 'HEALTH', ...(grouped ? ['GROUP'] : []), 'SCORE'];
+  const foot = routeGroup
+    ? `\n\n${results.length} tool(s) in ${routeGroup}, in catalog order — NOT a ranking. ` +
+      `Pick by the inputs you have, then health, then price; keep your own list of what you ran.\n` +
+      `  orca-tools inspect -t ${results[0].id}`
+    : `\n\n${results.length} result(s). Inspect one before running it:\n` +
+      `  orca-tools inspect -t ${results[0].id}`;
+  return table(headers, rows) + foot;
 };
 
 /**
@@ -120,6 +137,9 @@ export const renderInspect = (tool) => {
   out.push(`health    ${healthLine(tool.health)}`);
   out.push(`tier      ${tool.tier || '—'}`);
   out.push(`retryable ${tool.idempotent ? 'yes (idempotent)' : 'no — a timeout may have already run'}`);
+  if (tool.route_group) {
+    out.push(`group     ${groupLine(tool)} — alternatives: orca-tools discover -g ${tool.route_group}`);
+  }
   if (tool.data_class) out.push(`data      ${tool.data_class}`);
   out.push('');
   out.push('input schema (build your -i JSON from THIS, never from memory):');

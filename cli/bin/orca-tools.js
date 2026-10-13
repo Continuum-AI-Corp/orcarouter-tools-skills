@@ -43,6 +43,7 @@ const EXIT_UNREACHABLE = 4;
 const USAGE = `orca-tools — discover, inspect and run pay-per-call tools through OrcaRouter
 
   orca-tools discover -q <query> [-l <limit>] [-s <minScore>] [-c <category>] [-u]
+  orca-tools discover -g <routeGroup> [-q <query>] [-u]
   orca-tools inspect  -t <toolId>
   orca-tools run      -t <toolId> (-i <json> | -f <file>) [-o <outFile>]
                       [--run-ref <ref>] [--approval-id <n>] [--firewall-approval <id>]
@@ -54,6 +55,9 @@ const USAGE = `orca-tools — discover, inspect and run pay-per-call tools throu
   orca-tools keys add -k <key> -l <label> [--base <url>] | keys list | keys activate -l <label> | keys remove -l <label>
 
 Global: -j/--json raw JSON · --base <url> override the API host
+
+-g lists the tools of one route group (a tool's route_group): the
+alternatives to try, in an order YOU choose, when a tool failed or found nothing.
 
 --run-ref only names a run budget your operator already declared; an unknown
 ref is refused. --approval-id / --firewall-approval are the ids a refusal
@@ -157,15 +161,18 @@ class UsageError extends Error {}
 
 const cmdDiscover = async (f) => {
   const q = flag(f, 'q', 'query');
+  const g = flag(f, 'g', 'route-group');
+  const routeGroup = typeof g === 'string' ? g : '';
   const data = await api.discover({
     base: flag(f, 'base'),
     q: typeof q === 'string' ? q : '',
     limit: num(flag(f, 'l', 'limit')),
     category: typeof flag(f, 'c', 'category') === 'string' ? flag(f, 'c', 'category') : undefined,
+    routeGroup: routeGroup || undefined,
     minScore: num(flag(f, 's', 'min-score')),
     includeUnavailable: Boolean(flag(f, 'u', 'include-unavailable')),
   });
-  show(data, R.renderDiscover(data.results || []), f);
+  show(data, R.renderDiscover(data.results || [], routeGroup), f);
 };
 
 const cmdInspect = async (f) => {
