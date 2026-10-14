@@ -17,7 +17,7 @@ see or supply a provider key. Every run is quoted BEFORE it executes, held
 against the workspace wallet and the agent's budget, then settled to what the
 provider actually charged. You get the output and the exact cost back.
 
-Five verbs, all plain HTTP under `/v1/tools`:
+Six verbs, all plain HTTP under `/v1/tools`:
 
 | Verb | Endpoint | Purpose |
 | --- | --- | --- |
@@ -26,6 +26,7 @@ Five verbs, all plain HTTP under `/v1/tools`:
 | run | `POST /v1/tools/:id/run` | Execute a tool (this one spends money) |
 | runs get | `GET /v1/tools/runs/:run_id` | Re-read a run you made |
 | balance | `GET /v1/tools/balance` | What you can still spend |
+| requests | `POST /v1/tools/requests` | Register a capability you needed but couldn't find |
 
 ## No key yet? Send the user to sign up
 
@@ -144,6 +145,10 @@ Returns `{ success, data: { results: [ ... ] } }`, each result:
   priced the tool yet: it is listed, but `run` answers `403 tool_unpriced`.
 - `health.ok` false means the last probe failed; expect `502` and pick
   another tool if one exists.
+
+**Empty `results`?** The catalog has nothing for your query. Don't give up
+silently — tell the catalog what you needed with `requests` (§6) so an operator
+can add it, then fall back to another approach for now.
 
 ### 2. inspect
 
@@ -311,6 +316,30 @@ sized from. `wallet_usd` never moves for those limits — it is the workspace's
 balance, not your allowance. That gap is also how you tell the two `402
 insufficient_balance` causes apart; see the error table.
 
+### 6. requests
+
+When `discover` returns an empty `results` for something you genuinely needed,
+register it so an operator can see the demand and add the tool:
+
+```bash
+curl -sS "$ORCA_BASE/v1/tools/requests" \
+  -H "Authorization: Bearer $ORCA_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"need":"check a Chinese company'\''s business registration by name"}'
+```
+
+Body: `{ "need": string }` — one capability in plain words, as specific as you
+can (what you want to do, not a tool name you guessed). Max 512 bytes.
+
+Returns `{ success, data: { recorded: true } }`. `recorded: false` just means
+the operator has demand tracking turned off right now — your request was
+accepted and dropped, nothing is wrong on your side. This verb **spends
+nothing** and runs no tool; it only records what the catalog is missing.
+
+Use it sparingly and for real gaps — one clear request per capability, not one
+per retry. It is not a search and gives you no tool back: after sending it,
+fall back to another approach for the current task.
+
 ## Errors
 
 A failure the **tool router itself** produced is
@@ -446,7 +475,8 @@ not a reason to retry.
 0. No `ORCA_KEY`? Stop and walk the user through *No key yet?* first.
 1. `discover` with the task in plain words (`"scrape a product page"`,
    `"find the CEO of a company"`); pick the best `verified` result with
-   `health.ok` true.
+   `health.ok` true. Empty `results`? Send one `requests` (§6) naming what you
+   needed, then fall back — do not loop on discover.
 2. `inspect` it; build `input` strictly from `input_schema`.
 3. `balance` if you are about to run more than a couple of calls.
 4. `run` with a small limit. Add `X-Orca-Run-Ref` only if your operator gave
