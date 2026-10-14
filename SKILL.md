@@ -17,10 +17,11 @@ see or supply a provider key. Every run is quoted BEFORE it executes, held
 against the workspace wallet and the agent's budget, then settled to what the
 provider actually charged. You get the output and the exact cost back.
 
-Six verbs, all plain HTTP under `/v1/tools`:
+Seven verbs, all plain HTTP under `/v1/tools`:
 
 | Verb | Endpoint | Purpose |
 | --- | --- | --- |
+| catalog | `GET /v1/tools/catalog` | Browse the category map — what kinds of tools exist |
 | discover | `POST /v1/tools/discover` | Search the catalog by intent |
 | inspect | `GET /v1/tools/:id` | Read a tool's input schema, price and health |
 | run | `POST /v1/tools/:id/run` | Execute a tool (this one spends money) |
@@ -85,7 +86,12 @@ never echo it into output. The base URL is the API host of your OrcaRouter
 deployment — `https://api.orcarouter.ai` for the hosted one, and NOT the
 console host, which does not serve `/v1`. The examples below use `$ORCA_BASE`.
 
-## The loop: discover → inspect → run → report
+## The loop: catalog / discover → inspect → run → report
+
+**Don't know what to search for? Read the map first with `catalog`** (§0). It
+lists the categories that exist and how many tools sit on each, so you can pick
+a shelf and list it instead of guessing keywords. If you already have a good
+keyword, skip straight to `discover`.
 
 **Always inspect before you run.** Tool ids are stable but their input schemas
 are not guessable: a search tool may want `query` + `numResults`, an enrichment
@@ -107,6 +113,34 @@ run cost and keep a running total; check `balance` before a batch.
 **Never guess parameters.** If the schema has a required field you cannot
 fill from the task, ask, or pick a different tool. Do not invent values.
 
+### 0. catalog (browse the map — optional)
+
+When you have no keyword yet, read the category map and drill in instead of
+guessing:
+
+```bash
+curl -sS "$ORCA_BASE/v1/tools/catalog" \
+  -H "Authorization: Bearer $ORCA_KEY"
+```
+
+Returns the category tree with live tool counts, most-populated first:
+
+```json
+{ "success": true, "data": { "categories": [
+  { "category": "social-media", "tool_count": 320, "children": [
+      { "category": "social-media/tiktok", "tool_count": 24 },
+      { "category": "social-media/x", "tool_count": 12 } ] },
+  { "category": "crypto", "tool_count": 48, "children": [
+      { "category": "crypto/defi", "tool_count": 19 } ] }
+] } }
+```
+
+Pick a `category` — a top shelf (`crypto`) or a leaf (`crypto/defi`) — and pass
+it straight back to `discover` as the `category` filter to list that shelf's
+tools. The counts are what a default `discover` returns, so a shelf listed here
+is never empty. `catalog` spends nothing, needs no body, and may be cached; it
+is the one browse step, not something to poll.
+
 ### 1. discover
 
 ```bash
@@ -117,9 +151,11 @@ curl -sS "$ORCA_BASE/v1/tools/discover" \
 ```
 
 Body: `{ "q": string, "limit"?: int (1–10, default 10), "category"?: string,
-"route_group"?: string }`. With `route_group` the call lists that group's
-tools — see *When a tool fails or finds nothing* — up to 50 in one page, and
-`q` becomes optional.
+"route_group"?: string }`. `category` is a value from the `catalog` map (§0) —
+a top shelf (`crypto`) matches the whole shelf, a leaf (`crypto/defi`) matches
+exactly — and narrows a `q` search or, with no `q`, lists that shelf. With
+`route_group` the call lists that group's tools — see *When a tool fails or
+finds nothing* — up to 50 in one page, and `q` becomes optional.
 
 Returns `{ success, data: { results: [ ... ] } }`, each result:
 
