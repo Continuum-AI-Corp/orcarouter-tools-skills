@@ -93,6 +93,13 @@ lists the categories that exist and how many tools sit on each, so you can pick
 a shelf and list it instead of guessing keywords. If you already have a good
 keyword, skip straight to `discover`.
 
+**A search that found nothing usable is not the end.** Search is keyword
+matching: it returns whatever shares a word with your query, so "nothing
+usable" usually looks like a list of unrelated tools, not an empty one. Either
+way, go to the map and look on the right shelf before you conclude the tool
+does not exist — see *When the search finds nothing that fits*. Only then
+send a `requests` (§6).
+
 **Always inspect before you run.** Tool ids are stable but their input schemas
 are not guessable: a search tool may want `query` + `numResults`, an enrichment
 tool `domain`, a scraper `url` + `formats`. `inspect` returns the JSON Schema
@@ -113,10 +120,10 @@ run cost and keep a running total; check `balance` before a batch.
 **Never guess parameters.** If the schema has a required field you cannot
 fill from the task, ask, or pick a different tool. Do not invent values.
 
-### 0. catalog (browse the map — optional)
+### 0. catalog (browse the map)
 
-When you have no keyword yet, read the category map and drill in instead of
-guessing:
+Read the category map and drill in instead of guessing — when you have no
+keyword yet, and whenever `discover` found nothing that fits:
 
 ```bash
 curl -sS "$ORCA_BASE/v1/tools/catalog" \
@@ -194,9 +201,48 @@ Returns `{ success, data: { results: [ ... ] } }`, each result:
   `alternatives` other tools (same platform, same kind of answer). Absent
   means no known substitute. See *When a tool fails or finds nothing*.
 
-**Empty `results`?** The catalog has nothing for your query. Don't give up
-silently — tell the catalog what you needed with `requests` (§6) so an operator
-can add it, then fall back to another approach for now.
+**Nothing that fits?** An empty `results`, or results none of which does
+your job, does NOT mean the tool is missing. Follow *When the search finds
+nothing that fits* below before you send a `requests`.
+
+### When the search finds nothing that fits
+
+```
+discover found nothing that fits
+  → catalog: pick the right shelf
+  → discover {category} (+ a short English q on a big shelf)
+  → nothing? one more shelf, if the job could sit there
+  → still nothing? one requests, then fall back
+```
+
+This is about FINDING a tool. A tool you ran that failed or returned nothing
+is a different case: see *When a tool fails or finds nothing*.
+
+"Fits" means a result's `summary` and `categories` say it does the job you
+need — the right platform, the right kind of data. A result that merely shares
+a word with your query does not fit. When nothing fits, walk these steps in
+order and stop as soon as one turns up a tool:
+
+1. **Read the map** — `catalog` (§0). Pick the shelf the job belongs on: the
+   platform or data source if there is one (`social-media/tiktok`), otherwise
+   the kind of job (`crypto/defi`). A leaf is better than a top shelf when one
+   matches.
+2. **Look on that shelf** — `discover` with `{"category": "<that shelf>"}`.
+   - No `q` lists the shelf's first 10, best first. Enough when the shelf is
+     small (`tool_count` ≤ 10): read every summary.
+   - A bigger shelf needs a `q`: a short phrase in **English**, in the words
+     a tool's summary would use (`"search videos by keyword"`, `"user
+     profile"`), not your user's sentence. Try two or three phrasings if the
+     first finds nothing that fits.
+3. **Try a second shelf** only if the job plausibly sits on another one (a
+   company lookup may be on a data shelf and on a search shelf). Two shelves
+   is enough.
+4. **Still nothing → `requests`** (§6), once, naming the capability in plain
+   words. Then fall back to another approach for the task. Do not keep
+   searching.
+
+None of these steps spends anything. Keep it to a handful of calls: this is a
+short, ordered look, not a crawl of the catalog.
 
 ### 2. inspect
 
@@ -366,7 +412,8 @@ insufficient_balance` causes apart; see the error table.
 
 ### 6. requests
 
-When `discover` returns an empty `results` for something you genuinely needed,
+The LAST step of *When the search finds nothing that fits*: only after the map
+and the right shelf turned up nothing that does the job you genuinely needed,
 register it so an operator can see the demand and add the tool:
 
 ```bash
@@ -561,8 +608,11 @@ you already tried.
 0. No `ORCA_KEY`? Stop and walk the user through *No key yet?* first.
 1. `discover` with the task in plain words (`"scrape a product page"`,
    `"find the CEO of a company"`); pick the best `verified` result with
-   `health.ok` true. Empty `results`? Send one `requests` (§6) naming what you
-   needed, then fall back — do not loop on discover.
+   `health.ok` true. No keyword yet? Start from `catalog` (§0) instead.
+   Nothing fits (empty, or nothing that does the job)? `catalog` → the right
+   shelf → `discover` with that `category` (and a short English `q` on a big
+   shelf). Still nothing → one `requests` (§6), then fall back — do not keep
+   searching (*When the search finds nothing that fits*).
 2. `inspect` it; build `input` strictly from `input_schema`.
 3. `balance` if you are about to run more than a couple of calls.
 4. `run` with a small limit. Add `X-Orca-Run-Ref` only if your operator gave
