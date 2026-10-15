@@ -137,9 +137,13 @@ Returns the category tree with live tool counts, most-populated first:
 
 Pick a `category` — a top shelf (`crypto`) or a leaf (`crypto/defi`) — and pass
 it straight back to `discover` as the `category` filter to list that shelf's
-tools. The counts are what a default `discover` returns, so a shelf listed here
-is never empty. `catalog` spends nothing, needs no body, and may be cached; it
-is the one browse step, not something to poll.
+tools. The counts are what a default `discover` ranks from, so a shelf listed
+here is never empty. A count is the shelf's SIZE, not a page: `discover` returns
+at most 10, best first, and there is no offset. On a shelf bigger than that, add
+a `q` saying what you need (`{"category":"social-media/douyin","q":"search
+videos by keyword"}`) instead of listing it bare. `catalog` spends nothing,
+needs no body, and may be cached; it is the one browse step, not something to
+poll.
 
 ### 1. discover
 
