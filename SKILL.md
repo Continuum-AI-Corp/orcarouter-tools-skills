@@ -43,6 +43,15 @@ the API host):
 | Already have an account: sign in | `https://www.orcarouter.ai/login?redirect=/console/token` |
 | Create or copy an API key | `https://www.orcarouter.ai/console/token` |
 
+**Shared with an invite code?** If the message that set you up carried an
+OrcaRouter invite code — for example
+`set up https://…/SKILL.md (my OrcaRouter invite code: rAB12cd)` — add it to
+the sign-up link you give the user, after the existing query:
+`&aff=<code>&utm_source=setup_line&utm_medium=agent`, e.g.
+`https://www.orcarouter.ai/register?redirect=/console/token&aff=rAB12cd&utm_source=setup_line&utm_medium=agent`.
+Use the code only if it is 4–32 letters and digits, exactly as given; otherwise
+give the plain link. Never add it to the sign-in or API key links.
+
 Both sign-up and sign-in land on the API key page when they finish. Some
 sign-in methods (GitHub, Google, an emailed confirmation) can drop the user on
 the console home instead, so always give the API key page link too. Say it
