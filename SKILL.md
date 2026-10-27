@@ -267,9 +267,11 @@ Same fields as a discover result plus `input_schema` (JSON Schema, draft
 ### 3. run
 
 ```bash
-curl -sS "$ORCA_BASE/v1/tools/exa.search/run" \
+RUN_KEY=$(uuidgen)   # one per run you intend; reuse it only to ask about THIS run again
+curl -sS --max-time 210 "$ORCA_BASE/v1/tools/exa.search/run" \
   -H "Authorization: Bearer $ORCA_KEY" \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $RUN_KEY" \
   -H "X-Orca-Run-Ref: lead-scan-0905" \
   -d '{"input":{"query":"seed-stage fintech founders","numResults":5}}'
 ```
@@ -308,6 +310,41 @@ Success `200`:
 - `budget` keys are present only when a cap applies. `sandbox: true` appears
   instead of `budget` for a sandbox agent: the run was **simulated, never
   dispatched to the provider, and never billed**.
+
+#### Client timeout: at least 210 seconds
+
+A run answers only when it has finished, and many tools start a job at the
+provider that the server waits on inside your request: a run can take
+minutes. Its own budget is 120 seconds, and billing adds a little more, so
+**set your HTTP client timeout to at least 210 seconds** (`--max-time 210`
+above). A run keeps going on the server after your client gives up, so a
+shorter timeout loses the answer, not the charge. If you do time out, do not
+start a new run: send the same request again with the same `Idempotency-Key`.
+
+#### `Idempotency-Key` (send one with every run)
+
+Send a fresh `Idempotency-Key` (a UUID) with every run you intend. It is how
+the server recognises the SAME run when you ask again, so a retry after a lost
+answer never runs, or bills, the tool twice:
+
+- **Same key, same tool, same `input`** — you get the original run's answer
+  back with the same `run_id` and `idempotent_replay: true`. Nothing new is
+  held, sent or billed: do not add its `billed_usd` to your spend a second
+  time. If `output_retained` is `false`, the platform did not keep the output
+  (`payload_state` says why); the run still completed and was billed, and
+  running the tool again is a NEW run, billed again.
+- **The original is still running** — `409 idempotency_in_progress` with
+  `Retry-After`: wait that long and ask again with the same key.
+- **Same key, different tool or `input`** — `422 idempotency_key_reused`.
+  Nothing ran. Use a new key only if you really mean a new run.
+
+Reuse a key ONLY for a request whose answer you did not receive (a client
+timeout, a dropped connection, a crashed process). Once you have an answer —
+a success or a refusal — any further attempt, including a retry with
+`approval_id` or `X-OrcaRouter-Firewall-Approval`, gets a new key. A key is
+scoped to the API key that sent it; one that is too long or not printable
+ASCII is refused with `400 bad_input`. Without a key, every request is a new
+run.
 
 #### `X-Orca-Run-Ref` (optional; only for a run envelope that already exists)
 
@@ -492,7 +529,7 @@ or expired. Do not retry it. Tell the user to create a new key at
 | 400 | `bad_input` | The body is not JSON, `input` is not an object, or it fails the tool's schema | Re-read `inspect`, fix the input. Nothing was charged. |
 | 402 | `insufficient_balance` | The quote did not fit the workspace wallet **or your own key's remaining quota** — the key's quota is reserved BEFORE the wallet, so a workspace whose wallet is fully funded still answers this code when the key is nearly spent | Stop, and report WHICH balance — they have different remedies. Call `balance` and compare: `data.wallet_usd` low ⇒ the workspace needs a top-up: send the user to `https://www.orcarouter.ai/console/billing` to add funds, and mention that turning on auto top-up on the same page keeps it from running dry again; `data.wallet_usd` healthy while `data.spendable_usd` is much lower or `0` ⇒ the limit is your key's own quota (or your member budget), and a top-up changes nothing — an operator has to raise the key's quota at `https://www.orcarouter.ai/console/token`. Retrying before the right one is raised fails identically. Never make or start a payment yourself. |
 | 402 | `budget_exceeded` | The agent's monthly cap or this ref's run envelope cannot cover the quote, or the workspace member you authenticate as has reached a hard-stop monthly budget (`balance` then reports `data.spendable_usd: 0`) | Stop this batch. Reduce the request (fewer units) only if that plausibly fits; otherwise report. A member budget needs a workspace admin to raise it or the month to roll over. |
-| 402 | `policy_declined` (policy is judged at the quote × 1.25 ceiling that a run may bill, rounded up to the cent — an operator setting `per_txn_max` or `approval_threshold` should set it at or above that ceiling) | The agent's spend policy declined the run (a deny rule, or approval required). `deny` carries `reason`, `limit?`, `approval_id?`, `hint` | If `deny.approval_id` is set, a human has to approve it: wait, then RETRY the same run with `"approval_id": <id>` in the body. If there is no `approval_id`, the decision is final for this input. |
+| 402 | `policy_declined` (policy is judged at the quote × 1.25 ceiling that a run may bill, rounded up to the cent — an operator setting `per_txn_max` or `approval_threshold` should set it at or above that ceiling) | The agent's spend policy declined the run (a deny rule, or approval required). `deny` carries `reason`, `limit?`, `approval_id?`, `hint` | If `deny.approval_id` is set, a human has to approve it: wait, then RETRY the same run with `"approval_id": <id>` in the body (and a new `Idempotency-Key`). If there is no `approval_id`, the decision is final for this input. On that retry, `deny.reason` says what became of the approval: `approval_pending` — nobody has answered yet, wait (at least a minute) and retry with the same id; `approval_denied` — stop and tell your operator; `approval_expired` (4 hours after it was asked for), `approval_consumed` (an earlier retry already spent it), `approval_mismatch` or `approval_not_found` — retry WITHOUT `approval_id` to ask for a new one. |
 | 403 | `access_denied` | The calling key is **local-only** — fenced to local hardware and never allowed to spend — so `run` is refused at the door, before the schema, the policy, the money and the provider. `discover`, `inspect` and `balance` are NOT refused: they spend nothing. Nothing was sent, nothing was charged. | **Terminal for this key.** Stop the batch and tell your operator to turn local-only off for this key, or to issue you one that may spend. This is a key SETTING, not a balance, so no top-up and no retry clears it — every attempt answers identically. |
 | 403 | `api_key_not_spendable` | The calling key stopped being spendable: disabled, expired, switched to local-only, unbound from its agent, or rebound to another workspace. It is asked twice — once while the run reserves the money and once again immediately before the provider is called — so it can also land on a key that was fine when the run started. Nothing was sent; anything held was handed straight back, so nothing was charged. | **Terminal for this key.** Stop the batch and tell your operator. This is the key's CONFIGURATION, not a lack of funds (`402 insufficient_balance` is the "no room to pay" answer), so topping the wallet up does not clear it and neither does a retry — the key has to be re-enabled, re-bound, or replaced. |
 | 403 | `workspace_not_active` | The WORKSPACE, not your key and not your agent, stopped being able to spend between the key check and the provider call: suspended by Trust & Safety, archived, or the account you authenticate as was removed from it. The run re-asks this immediately before egress, so it can land on a workspace that was fine when the run started. Nothing was sent; anything held was handed back. | **Terminal, and not yours to fix.** Stop the batch and tell your operator — a suspended workspace needs a moderator and a removed member needs re-adding. Do NOT rotate or replace the key: the key is fine, which is why this is not `api_key_not_spendable`. A suspension the auth layer can already see answers `workspace_suspended` instead, in the no-envelope shape above. |
@@ -501,6 +538,8 @@ or expired. Do not retry it. Tell the user to create a new key at
 | 403 | `tool_unpriced` | The tool is live but not for sale yet: no sell price has been set for it (`discover` / `inspect` show `price.for_sale: false`). Refused before the policy, the money and the provider — nothing was sent, nothing was charged. | **Terminal until an operator prices the tool.** Do not retry; `discover` an alternative tool that is `for_sale: true`, or tell your operator which tool needs a price. |
 | 404 | `tool_not_found` | No live tool with that id | `discover` again; the tool may have been unlisted. |
 | 404 | `run_not_found` | No run with that id in your workspace | Check the id. |
+| 409 | `idempotency_in_progress` | The run your `Idempotency-Key` names is still running | Wait `Retry-After` seconds, then send the same request with the SAME key. Do not use a new key: that starts, and bills, a second run. |
+| 422 | `idempotency_key_reused` | Your `Idempotency-Key` already names a run of another tool or another `input`. Nothing ran. | Use a new key if you mean a new run. |
 | 429 | `rate_limited` | Too many runs from **your key** per minute | Back off for `Retry-After` seconds, then continue. Pacing your own loop fixes this. |
 | 429 | `upstream_busy` | The tool's **provider** is at its concurrency or rate ceiling — platform-wide, not yours. Nothing was sent and nothing was billed; the body carries `outcome: "none"`, `retry_safe: true` and `retry_after` in seconds. | Pacing your own loop will **not** help: the saturation is shared. Either wait `Retry-After` seconds, or switch to an alternative now (`discover` with the tool's `route_group`; without one, `discover` the job again). If you have a batch to get through, prefer the alternative — this ceiling is usually a provider's account quota and will not clear quickly. |
 | 502 | `provider_failed` | The provider call failed: it answered a non-2xx status, the connection failed, or it answered 2xx with a body too large to read (a tool whose upstream key is not configured is normally refused up front with `503 tool_unavailable`; a key that is removed, or cannot be read, between that check and the call ends the run here instead, with `outcome: "none"`). The hold was released — **nothing was billed**. The body carries `outcome` and `retry_safe` (see *Retrying a failed run*): `"none"` when the failure happened before the request left, `"unknown"` after a non-2xx or a connection failure (a provider can commit the action and THEN answer 5xx), `"acted"` after an unreadable 2xx. | Follow `retry_safe`, never the status alone: retry once when it is `true`; otherwise verify the provider's state or report. If it keeps failing, try another tool and check `health.ok` in `discover`. |
@@ -540,16 +579,19 @@ their `error_code`, including `usage_contract` and `provider_timeout`. The row
 does not repeat `outcome` / `retry_safe`: those are on the run response —
 keep them with the `run_id` when you report.
 
-**A run has no idempotency key.** If YOUR side gave up on a `run` call — a
-client timeout, a dropped connection, a crashed process — you have no
-response and no `outcome`, and you cannot tell whether the request is still
-running on the server: once the provider call has started it runs to the
-end whether or not you are still listening, and the run row is only written
-after several checks, so an empty run list at that
-moment proves nothing. Sending the run again can execute it, and bill it, a
-second time.
+**If YOUR side gave up on a `run` call** — a client timeout, a dropped
+connection, a crashed process — you have no response and no `outcome`, and
+you cannot tell whether the request is still running on the server: once the
+provider call has started it runs to the end whether or not you are still
+listening. **If you sent an `Idempotency-Key`, send the same request again
+with the same key**: you get the original run's answer (or `409
+idempotency_in_progress` while it is still running), and nothing runs or
+bills twice. The rest of this paragraph is for a run sent WITHOUT a key: the
+run row is only written after several checks, so an empty run list at that
+moment proves nothing, and sending the run again can execute it, and bill
+it, a second time.
 
-**Do not re-send automatically — not even an `idempotent: true` tool.**
+**Without a key, do not re-send automatically — not even an `idempotent: true` tool.**
 Idempotent means repeating the call has no extra effect at the PROVIDER; it
 does not deduplicate OrcaRouter runs, so a second run is billed again. Look
 the attempt up with `GET /v1/tools/runs?tool_id=<id>` (newest first). If one
@@ -624,8 +666,10 @@ you already tried.
    searching (*When the search finds nothing that fits*).
 2. `inspect` it; build `input` strictly from `input_schema`.
 3. `balance` if you are about to run more than a couple of calls.
-4. `run` with a small limit. Add `X-Orca-Run-Ref` only if your operator gave
-   you a run reference; never make one up.
+4. `run` with a small limit, a fresh `Idempotency-Key` and a client timeout
+   of at least 210 s. Add `X-Orca-Run-Ref` only if your operator gave you a
+   run reference; never make one up. Timed out? Send it again with the SAME
+   key, never a new one.
 5. Report `billed_usd` to the operator, use the `output`, widen the limit only
    if needed. If the tool failed or found nothing and it has a `route_group`,
    pick the next one yourself (*When a tool fails or finds nothing*).
